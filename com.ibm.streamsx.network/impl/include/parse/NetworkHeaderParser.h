@@ -219,6 +219,13 @@ class NetworkHeaderParser {
             //???printf("IPv4: "); for (int i=0; i<ipv4HeaderLength; i++) printf("%02x ", (uint8_t)buffer[i]); printf("\n"); 
             buffer += ipv4HeaderLength;
             length -= ipv4HeaderLength;
+
+            // Respect the IP Datagram length field, if we can.  Note this field includes header length.
+            payloadLength = ntohs(ipv4Header->tot_len) - ipv4HeaderLength;
+            if(payloadLength > length) {
+                // Computed length is too long, given the data we have.  Reset to 0 to allow the final remainder to be used, below.
+                payloadLength = 0;
+            }
         }
 
         // if the buffer contains an IPv6 packet, overlay an IPv6 header on it
@@ -228,6 +235,14 @@ class NetworkHeaderParser {
             //???printf("IPv6: "); for (int i=0; i<ipv6HeaderLength; i++) printf("%02x ", (uint8_t)buffer[i]); printf("\n"); 
             buffer += ipv6HeaderLength;
             length -= ipv6HeaderLength;
+
+            // Respect the IP datagram payload length field, if we can. Note this field does NOT include header length, but does include extensions.
+            // Since the rest of this code ignores extension headers, we will too.
+            payloadLength = ntohs(ipv6Header->ip6_plen);
+            if(payloadLength > length) {
+                // Computed length is too long, given the data we have.  Reset to 0 to allow the final remainder to be used, below.
+                payloadLength = 0;
+            }
         }
 
         // if the buffer does not contain an IPv4 or IPv6 packet, give up
@@ -241,6 +256,14 @@ class NetworkHeaderParser {
             //???printf("UDP: "); for (int i=0; i<udpHeaderLength; i++) printf("%02x ", (uint8_t)buffer[i]); printf("\n"); 
             buffer += udpHeaderLength;
             length -= udpHeaderLength;
+
+            // Adjust final payload length down, eliminating the UDP header
+            if(payloadLength >= udpHeaderLength) {
+                payloadLength -= udpHeaderLength;
+            } else {
+                // Wasn't even enough space for the header??
+                payloadLength = 0;
+            }
         }
 
         // if the buffer contains a TCP packet, and it has a TCP header, overlay a TCP header on it
@@ -251,12 +274,25 @@ class NetworkHeaderParser {
             //???printf("TCP: "); for (int i=0; i<tcpHeaderLength; i++) printf("%02x ", (uint8_t)buffer[i]); printf("\n"); 
             buffer += tcpHeaderLength;
             length -= tcpHeaderLength;
+
+            // Adjust final payload length down, eliminating the UDP header
+            if(payloadLength >= tcpHeaderLength) {
+                payloadLength -= tcpHeaderLength;
+            } else {
+                // Wasn't even enough space for the header??
+                payloadLength = 0;
+            }
         }
 
         // if there is any data left in the buffer, its the packet's payload
         if (length>0) {
             payload = buffer;
-            payloadLength = length;
+
+            // Set the payload length to whatever is left in the packet buffer, if we haven't already
+            // found a more appropriate length from the IP headers.
+            if(payloadLength == 0) {
+                payloadLength = length;
+            }
         }
     }
 
