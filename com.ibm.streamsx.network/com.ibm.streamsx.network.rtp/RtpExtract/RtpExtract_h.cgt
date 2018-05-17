@@ -92,11 +92,12 @@ public:
 
   // Punctuation processing
   void process(Punctuation const & punct, uint32_t port);
-  unsigned int getSSRC(rtp_packet the_packet);
-  unsigned int getRtpTimestamp(rtp_packet the_packet);
-  unsigned int getRtpSeq(rtp_packet the_packet);
-  unsigned int getRtpPayloadLength(rtp_packet the_packet);
-  SPL::blob getRtpPayload(rtp_packet the_packet);
+  uint8_t getPayloadType(const rtp_packet &the_packet);
+  unsigned int getSSRC(const rtp_packet &the_packet);
+  unsigned int getRtpTimestamp(const rtp_packet &the_packet);
+  unsigned int getRtpSeq(const rtp_packet &the_packet);
+  unsigned int getRtpPayloadLength(const rtp_packet &the_packet);
+  SPL::blob getRtpPayload(const rtp_packet &the_packet);
   
 private:
   // Members

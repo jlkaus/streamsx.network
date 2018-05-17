@@ -107,23 +107,27 @@ rtp_packet RTPGetRTPPacket(const unsigned char *rtppacket, long pktlen) {
 	return the_packet;
 }
 
-unsigned int MY_OPERATOR::getSSRC(rtp_packet the_packet){
+uint8_t MY_OPERATOR::getPayloadType(const rtp_packet &the_packet){
+    return (the_packet.RTP_header->mpt & 0x7F);
+}
+
+unsigned int MY_OPERATOR::getSSRC(const rtp_packet &the_packet){
     return the_packet.RTP_header->ssrc;
 }
 
-unsigned int MY_OPERATOR::getRtpTimestamp(rtp_packet the_packet){
+unsigned int MY_OPERATOR::getRtpTimestamp(const rtp_packet &the_packet){
     return the_packet.RTP_header->ts;
 }
 
-unsigned int MY_OPERATOR::getRtpSeq(rtp_packet the_packet){
+unsigned int MY_OPERATOR::getRtpSeq(const rtp_packet &the_packet){
     return the_packet.RTP_header->seq;
 }
 
-unsigned int MY_OPERATOR::getRtpPayloadLength(rtp_packet the_packet){
+unsigned int MY_OPERATOR::getRtpPayloadLength(const rtp_packet &the_packet){
     return the_packet.payload_len;
 }
 
-SPL::blob MY_OPERATOR::getRtpPayload(rtp_packet the_packet){
+SPL::blob MY_OPERATOR::getRtpPayload(const rtp_packet &the_packet){
     return blob(the_packet.payload, the_packet.payload_len);
 }
 
