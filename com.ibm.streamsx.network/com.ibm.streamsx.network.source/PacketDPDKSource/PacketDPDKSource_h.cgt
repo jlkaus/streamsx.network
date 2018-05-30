@@ -156,6 +156,9 @@ class MY_OPERATOR : public MY_BASE_OPERATOR {
 	SPL::blob PACKET_DATA() { return SPL::blob((const unsigned char*)packetPtr, packetLen); }
 
   inline __attribute__((always_inline))
+  SPL::uint32 PAYLOAD_OFFSET() { return headers.payload ? (SPL::uint32)(headers.payload - headers.packetBuffer) : packetLen; }
+
+  inline __attribute__((always_inline))
 	SPL::uint32 PAYLOAD_LENGTH() { return headers.payloadLength; }
 
   inline __attribute__((always_inline))
