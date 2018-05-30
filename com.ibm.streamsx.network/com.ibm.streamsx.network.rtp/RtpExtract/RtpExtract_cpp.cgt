@@ -76,7 +76,7 @@ rtp_packet RTPGetRTPPacket(const unsigned char *rtppacket, long pktlen) {
 		 the packet payload will point to the wrong place. */
 
 		the_packet.payload = ((unsigned char*) the_packet.RTP_extension
-				+ (the_packet.RTP_extension->elen + 1) * 4);
+				+ (ntohs(the_packet.RTP_extension->elen) + 1) * 4);
 	}
 
 	/* Otherwise, set extension field to NULL */
@@ -98,7 +98,7 @@ rtp_packet RTPGetRTPPacket(const unsigned char *rtppacket, long pktlen) {
 		// jms this is gotta be wron
 	    SPLAPPTRC(L_TRACE,"Payload length after: " << the_packet.payload_len , RTP_EXTRACT_OPER); 
 		if (the_packet.payload_len > 0){
-			the_packet.payload_len -= (int) the_packet.payload[the_packet.payload_len - 1];
+			the_packet.payload_len -= (size_t) the_packet.payload[the_packet.payload_len - 1];
 		} else {
 			// the packet hasn't been handled correctly
 		}
@@ -123,6 +123,10 @@ unsigned int MY_OPERATOR::getRtpSeq(const rtp_packet &the_packet){
     return the_packet.RTP_header->seq;
 }
 
+bool MY_OPERATOR::getRtpMark(const rtp_packet &the_packet){
+    return (the_packet.RTP_header->mpt & 0x80) == 0x80;
+}
+
 unsigned int MY_OPERATOR::getRtpPayloadLength(const rtp_packet &the_packet){
     return the_packet.payload_len;
 }
@@ -141,9 +145,10 @@ void MY_OPERATOR::process(Tuple & tuple, uint32_t port)
 	IPort0Type const & <%=$inputTuple%> = static_cast<IPort0Type const&> (tuple); 
 
 //	  int dstPort = <%=$inputTuple%>.get_dstPort();
-    const unsigned char *packet = <%=$inputTuple%>.get_netflowMessage().getData();
+    const unsigned char *packet = <%=$inputTuple%>.get_netflowMessage().getData() + <%=$inputTuple%>.get_payloadOffset();
     int actualSize = <%=$inputTuple%>.get_netflowMessage().getSize(); 
     int payloadLength = <%=$inputTuple%>.get_payloadLength();
+    
 
     // Extract RTP payload
     rtp_packet the_packet = RTPGetRTPPacket(packet, payloadLength);

@@ -30,6 +30,10 @@
 	      		<prototype><![CDATA[uint16 getRtpSeq()]]></prototype>
 	      	</function>
 	      	<function>
+	      		<description>Return RTP Mark bit.</description>
+	      		<prototype><![CDATA[boolean getRtpMark()]]></prototype>
+	      	</function>
+	      	<function>
 	      		<description>Return RTP sequence.</description>
 	      		<prototype><![CDATA[uint32 getRtpPayloadLength()]]></prototype>
 	      	</function>

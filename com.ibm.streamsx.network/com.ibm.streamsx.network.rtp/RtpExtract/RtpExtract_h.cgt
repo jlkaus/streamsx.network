@@ -96,6 +96,7 @@ public:
   unsigned int getSSRC(const rtp_packet &the_packet);
   unsigned int getRtpTimestamp(const rtp_packet &the_packet);
   unsigned int getRtpSeq(const rtp_packet &the_packet);
+  bool getRtpMark(const rtp_packet &the_packet);
   unsigned int getRtpPayloadLength(const rtp_packet &the_packet);
   SPL::blob getRtpPayload(const rtp_packet &the_packet);
   
