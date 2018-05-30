@@ -180,6 +180,18 @@ Note that the data may have been truncated when the packet was captured.
           <function:function>
             <function:description>
 
+This function returns the offset inside the full PACKET_DATA() blob at which the
+actual payload starts (that is, where the data returned by PAYLOAD_DATA() starts).
+If there is no official payload (i.e., all the data in the packet was consumed by
+the various ethernet/IP/TCP/UDP protocol headers), this will be equal to the PACKET_LENGTH().
+
+            </function:description>
+            <function:prototype>public uint32 PAYLOAD_OFFSET()</function:prototype>
+          </function:function>
+
+          <function:function>
+            <function:description>
+
 This function returns the number of bytes of payload data in the current packet,
 excluding all network headers.
 Note that this value may be larger than the length of the binary data returned by
