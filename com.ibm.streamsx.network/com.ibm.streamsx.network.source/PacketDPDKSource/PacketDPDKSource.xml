@@ -336,6 +336,16 @@ This metric reports the high water mark of the first software queue.
 	  </description>
           <kind>Counter</kind>
         </metric>
+
+        <metric>
+          <name>nPacketsNotSelected</name>
+          <description>
+This metric reports the number of packets that were unselected by any output filter.
+Mostly used for debugging, to identify packets seen but not sent on.
+          </description>
+          <kind>Counter</kind>
+        </metric>
+
       </metrics>
 
       <libraryDependencies>

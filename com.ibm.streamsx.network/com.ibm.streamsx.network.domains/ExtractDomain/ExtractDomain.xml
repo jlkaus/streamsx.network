@@ -7,6 +7,24 @@ others. All Rights Reserved.
   <cppOperatorModel>
     <context>
       <description>This operator extracts the domain+tld portion of a fqdn in a tuple, and sets a pre-existing field in the tuple to that value.</description>
+      <metrics>
+        <metric>
+          <name>sent_tuple_latency</name>
+          <description>
+Sum of time (in ns) that all tuples sent so far have been delayed by this
+operator.
+          </description>
+          <kind>Counter</kind>
+        </metric>
+        <metric>
+          <name>downstream_latency</name>
+          <description>
+Sum of time (in ns) that all tuples sent so far have spent in downstream
+processing on this thread (time spent in the submit() calls).
+          </description>
+          <kind>Counter</kind>
+        </metric>
+      </metrics>
       <libraryDependencies>
         <library>
           <cmn:description>   </cmn:description>
@@ -54,6 +72,18 @@ If blankOnInvalidTLD is set, when no valid TLD is found, the outputDomainAttr fi
         <type>boolean</type>
         <cardinality>1</cardinality>
         <portScope><port>0</port></portScope>
+      </parameter>
+      <parameter>
+        <name>metricsInterval</name>
+        <description>
+Interval between metrics updates.  Units are seconds, and the default setting
+is 10.
+        </description>
+        <optional>true</optional>
+        <rewriteAllowed>true</rewriteAllowed>
+        <expressionMode>AttributeFree</expressionMode>
+        <type>float64</type>
+        <cardinality>1</cardinality>
       </parameter>
    </parameters>
     <inputPorts>

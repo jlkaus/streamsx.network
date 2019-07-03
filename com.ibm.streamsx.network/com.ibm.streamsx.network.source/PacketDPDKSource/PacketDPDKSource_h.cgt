@@ -103,6 +103,7 @@ class MY_OPERATOR : public MY_BASE_OPERATOR {
         bool realMetricsUpdate;
         uint64_t packetDropSW, packetDropSWNow, packetDropSWThen;
         uint64_t maxQueueDepthSW, maxQueueDepthSWNow, maxQueueDepthSWThen;
+        uint64_t packetNotSelectedNow;
 
         double    rateLimit;
         uint64_t  rateLimitLastTime;

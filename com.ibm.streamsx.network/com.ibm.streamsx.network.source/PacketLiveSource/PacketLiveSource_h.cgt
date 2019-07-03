@@ -81,6 +81,7 @@ private:
   uint64_t packetCounter, packetCounterNow, packetCounterThen;
   uint64_t byteCounter, byteCounterNow, byteCounterThen;
   bool metricsUpdate;
+  uint64_t packetNotSelectedNow;
 
   double    rateLimit;
   uint64_t  rateLimitLastTime;

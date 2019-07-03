@@ -9,6 +9,7 @@
 #include <string>
 #include <arpa/inet.h>
 #include "NetworkResources.h"
+#include <atomic>
 
 #define EXTRACT_DOMAIN "EXTRACT_DOMAIN"
 
@@ -51,10 +52,29 @@ $outputDomainAttr =~ s/^.*\.//;
 
 my $blankOnInvalid = $model->getParameterByName("blankOnInvalidTLD");
 $blankOnInvalid = $blankOnInvalid ? $blankOnInvalid->getValueAt(0)->getSPLExpression() eq "true" : undef;
+my $metricsInterval = $model->getParameterByName("metricsInterval") ? $model->getParameterByName("metricsInterval")->getValueAt(0)->getCppExpression() : "10.0";
 
 %>
 
 <%SPL::CodeGen::implementationPrologue($model);%>
+
+
+#define TIMEDIFF(b,a) \
+    ( (uint64_t)((long)((b).tv_sec - (a).tv_sec)*1000000000l + ((b).tv_nsec - (a).tv_nsec)) )
+
+#ifdef MEASURE_TIMINGS_EXTRACTDOMAIN
+#define STAMPTIME(name) \
+    struct timespec name; \
+    clock_gettime(CLOCK_MONOTONIC, &name)
+#define PREPTIME(name) \
+    struct timespec name
+#define STAMPTIME_PREPPED(name) \
+    clock_gettime(CLOCK_MONOTONIC, &name)
+#else
+#define STAMPTIME(name)
+#define PREPTIME(name)
+#define STAMPTIME_PREPPED(name)
+#endif
 
 // Constructor
 MY_OPERATOR::MY_OPERATOR() {
@@ -77,14 +97,75 @@ void MY_OPERATOR::allPortsReady() {
     // Notifies that all ports are ready. No tuples should be submitted before
     // this. Source operators can use this method to spawn threads.
 
-    /*
-      createThreads(1); // Create source thread
-    */
+    createThreads(1); // Create metrics thread
 }
- 
+
 // Notify pending shutdown
 void MY_OPERATOR::prepareToShutdown() {
     // This is an asynchronous call
+    traceStats();
+}
+
+// Processing for source and threaded operators
+void MY_OPERATOR::process(uint32_t idx)
+{
+    SPLAPPTRC(L_TRACE, "process(thread "<<idx<<"): entered", EXTRACT_DOMAIN);
+
+
+    ProcessingElement &pe = getPE();
+
+    double metricsInterval = <%=$metricsInterval%>;
+
+    double lastMetricsTime = SPL::Functions::Time::getTimestampInSecs();
+
+    // A typical implementation will loop until shutdown
+    while(!pe.getShutdownRequested()) {
+
+        // Let more data accumulate
+        double targetTime = lastMetricsTime + metricsInterval;
+        double now = SPL::Functions::Time::getTimestampInSecs();
+        pe.blockUntilShutdownRequest(targetTime - now);
+        lastMetricsTime = targetTime;
+
+        updateMetrics();
+    }
+
+    updateMetrics();
+
+    SPLAPPTRC(L_TRACE, "process(thread "<<idx<<"): exiting", EXTRACT_DOMAIN);
+}
+
+void MY_OPERATOR::updateMetrics()
+{
+    // Create the user-defined metrics
+    OperatorMetrics& opm = getContext().getMetrics();
+
+    // expose the operator's statistics as metrics
+    opm.getCustomMetricByName("sent_tuple_latency").setValue(time_total_added.load(std::memory_order_relaxed));
+    opm.getCustomMetricByName("downstream_latency").setValue(time_submit.load(std::memory_order_relaxed));
+}
+
+void MY_OPERATOR::traceStats() {
+
+#ifdef MEASURE_TIMINGS_EXTRACTDOMAIN
+    SPLAPPTRC(L_ERROR, "count_processed " << count_processed << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "count_no_tld_found " << count_no_tld_found << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "count_labels_no_tld_found " << count_labels_no_tld_found << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "count_labels " << count_labels << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "time_total_added " << time_total_added << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "time_preprep " << time_preprep << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "time_lock " << time_lock << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "time_wait_first " << time_wait_first << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "time_total_kernel_found " << time_total_kernel_found << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "time_total_kernel_not_found " << time_total_kernel_not_found << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "time_set_lookup " << time_set_lookup << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "time_find_label " << time_find_label << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "time_unlock " << time_unlock << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "time_postprep " << time_postprep << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "time_submit " << time_submit << " " << count_dumps, EXTRACT_DOMAIN);
+    SPLAPPTRC(L_ERROR, "time_intercall " << time_intercall << " " << count_dumps, EXTRACT_DOMAIN);
+    ++count_dumps;
+#endif
 }
 
 // Tuple processing for mutating ports
@@ -92,7 +173,27 @@ void MY_OPERATOR::process(Tuple & tuple, uint32_t port) {
     SPLAPPTRC(L_TRACE, "entering <%=$myOperatorKind%> process() mutating.", EXTRACT_DOMAIN);
 
     if(port == 0) {
+        struct timespec ts_start;
+        clock_gettime(CLOCK_MONOTONIC, &ts_start);
+        struct timespec ts_presubmit;
+        struct timespec ts_end;
+
         IPort0Type& iport$0 = (IPort0Type &)tuple;
+
+        bool had_to_wait = false;
+
+#ifdef MEASURE_TIMINGS_EXTRACTDOMAIN
+        uint64_t labels_searched = 0;
+        uint64_t lookup_time = 0;
+        uint64_t scan_time = 0;
+#endif
+        PREPTIME(ts_prelock);
+        PREPTIME(ts_postlock);
+        PREPTIME(ts_prekernel);
+        PREPTIME(ts_loopstart);
+        PREPTIME(ts_midloop);
+        PREPTIME(ts_postkernel);
+        PREPTIME(ts_postunlock);
 
         std::string fqdn = <%=$inputFQDNAttrParamCppValue%>;
         SPLAPPTRC(L_TRACE, "Process mutating, port 0: " << fqdn, EXTRACT_DOMAIN);
@@ -110,10 +211,14 @@ void MY_OPERATOR::process(Tuple & tuple, uint32_t port) {
         const char *ts = NULL;
         const char *ds = NULL;
 
+        STAMPTIME_PREPPED(ts_prelock);
+
         {
             mutex_[tldsRSel_].lock();
+            STAMPTIME_PREPPED(ts_postlock);
 
             if(!firstListLoaded_) {
+                had_to_wait = true;
                 ProcessingElement &pe = getPE();
 
                 SPLAPPTRC(L_WARN, "Waiting for the initial TLD list to be loaded in. R="<<tldsRSel_, EXTRACT_DOMAIN);
@@ -138,26 +243,42 @@ void MY_OPERATOR::process(Tuple & tuple, uint32_t port) {
                     SPLAPPTRC(L_WARN, "Initial TLD list is loaded.  We can proceed. R="<<tldsRSel_, EXTRACT_DOMAIN);
                 }
             }
+            STAMPTIME_PREPPED(ts_prekernel);
 
+            STAMPTIME_PREPPED(ts_loopstart);
             for(const char *p = fqdn.c_str(); p && *p; ) {
                 // Check the suffix starting at p to see if it is a TLD
                 if(tlds_[tldsRSel_]->count(p)) {
                     // Looks like its a TLD!
                     ts = p;
+                    STAMPTIME_PREPPED(ts_midloop);
+#ifdef MEASURE_TIMINGS_EXTRACTDOMAIN
+                    ++labels_searched;
+                    lookup_time += TIMEDIFF(ts_midloop, ts_loopstart);
+#endif
                     break;
                 }
 
                 // Probably not a TLD
                 ds = p;
+                STAMPTIME_PREPPED(ts_midloop);
                 p = ::index(p, '.');
                 if(p) {
                     // Move past the dot.  This might put us at the \0 null terminator, but that's ok, and will be handled fine.
                     ++p;
                 }
+#ifdef MEASURE_TIMINGS_EXTRACTDOMAIN
+                lookup_time += TIMEDIFF(ts_midloop, ts_loopstart);
+                STAMPTIME_PREPPED(ts_loopstart);
+                ++labels_searched;
+                scan_time += TIMEDIFF(ts_loopstart, ts_midloop);
+#endif
             }
+            STAMPTIME_PREPPED(ts_postkernel);
 
             mutex_[tldsRSel_].unlock();
         }
+        STAMPTIME_PREPPED(ts_postunlock);
 
         if(!ts) {
             // Rather than allow a NULL ptr, set ts (and thus ds, eventually) to the \0 at the end of fqdn.c_str().
@@ -193,7 +314,44 @@ void MY_OPERATOR::process(Tuple & tuple, uint32_t port) {
 <% } %>
         }
 
+        clock_gettime(CLOCK_MONOTONIC, &ts_presubmit);
         submit(iport$0, 0);
+        clock_gettime(CLOCK_MONOTONIC, &ts_end);
+
+        time_total_added.fetch_add(TIMEDIFF(ts_presubmit, ts_start), std::memory_order_relaxed);
+        time_submit.fetch_add(TIMEDIFF(ts_end, ts_presubmit), std::memory_order_relaxed);
+
+#ifdef MEASURE_TIMINGS_EXTRACTDOMAIN
+        ++count_processed;
+        count_labels += labels_searched;
+
+        time_preprep += TIMEDIFF(ts_prelock, ts_start);
+        time_lock += TIMEDIFF(ts_postlock, ts_prelock);
+        if(had_to_wait) {
+            time_wait_first += TIMEDIFF(ts_prekernel, ts_postlock);
+        }
+        time_set_lookup += lookup_time;
+        time_find_label += scan_time;
+
+        if(*ds) {
+            time_total_kernel_found += TIMEDIFF(ts_postkernel, ts_prekernel);
+        } else {
+            ++count_no_tld_found;
+            time_total_kernel_not_found += TIMEDIFF(ts_postkernel, ts_prekernel);
+            count_labels_no_tld_found += labels_searched;
+        }
+
+        time_unlock += TIMEDIFF(ts_postunlock, ts_postkernel);
+        time_postprep += TIMEDIFF(ts_presubmit, ts_postunlock);
+
+        time_intercall += TIMEDIFF(ts_start, ts_lastexit);
+
+        if(count_processed % (1024*1024*16) == 0) {
+            traceStats();
+        }
+
+        STAMPTIME_PREPPED(ts_lastexit);
+#endif
     }
 }
 

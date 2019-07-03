@@ -97,6 +97,7 @@ MY_OPERATOR::MY_OPERATOR()
   pcapDescriptor = NULL;
   pcapStatisticsNow = pcapStatisticsThen = (const struct pcap_stat){0};
   metricsUpdate = false;
+  packetNotSelectedNow = 0;
 
   // clear the output tuples
   <% for (my $i=0; $i<$model->getNumberOfOutputPorts(); $i++) { %> ;
@@ -310,6 +311,7 @@ void MY_OPERATOR::processPCAPbuffer(const struct pcap_pkthdr* header, const u_ch
   headers.parseNetworkHeaders((char*)buffer, header->caplen, jMirrorCheck);
   if ( ! ( headers.ipv4Header || headers.ipv6Header ) ) { SPLAPPTRC(L_DEBUG, "ignoring packet, no IPv4 or IPv6 header found", "PacketLiveSource");  return; }
 
+  bool sent_somewhere = false;
   // fill in and submit output tuples to output ports, as selected by output filters, if specified
   <% for (my $i=0; $i<$model->getNumberOfOutputPorts(); $i++) { %> ;
     <% if (scalar($outputFilterList[$i])) { print "if ($outputFilterList[$i])"; } %> 
@@ -317,8 +319,14 @@ void MY_OPERATOR::processPCAPbuffer(const struct pcap_pkthdr* header, const u_ch
       <% CodeGenX::assignOutputAttributeValues("outTuple$i", $model->getOutputPortAt($i)); %> ;
       SPLAPPTRC(L_TRACE, "submitting outTuple<%=$i%>=" << outTuple<%=$i%>, "PacketLiveSource");
       submit(outTuple<%=$i%>, <%=$i%>);
+      sent_somewhere = true;
     }
   <% } %> ;
+
+  // If nobody selected this packet, note that, for later analysis.
+  if(!sent_somewhere) {
+      ++packetNotSelectedNow;
+  }
 
   // reset the 'metrics updated' flag, in case one of the output filters or assignments references it
   metricsUpdate = false;
@@ -382,6 +390,7 @@ void MY_OPERATOR::pcapThread()
     Metric* totalPacketsDropped = &opm.getCustomMetricByName("nPacketsDroppedCurrent");
     Metric* totalPacketsProcessed = &opm.getCustomMetricByName("nPacketsProcessedCurrent");
     Metric* totalBytesProcessed = &opm.getCustomMetricByName("nBytesProcessedCurrent");
+    Metric* packetsNotSelected = &opm.getCustomMetricByName("nPacketsNotSelected");
 
     // get statistics periodically and send them to the runtime
     while (!getPE().getShutdownRequested()) {
@@ -414,6 +423,7 @@ void MY_OPERATOR::pcapThread()
       totalPacketsDropped->setValue(pcapStatisticsNow.ps_drop);
       totalPacketsProcessed->setValue(packetCounterNow);
       totalBytesProcessed->setValue(byteCounterNow);
+      packetsNotSelected->setValue(packetNotSelectedNow);
 
       // updated metrics will be available to the next output tuple emitted
       metricsUpdate = true;

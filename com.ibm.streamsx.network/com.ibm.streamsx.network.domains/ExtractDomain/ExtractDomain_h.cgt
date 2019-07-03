@@ -5,6 +5,7 @@
 
 /* Additional includes go here */
 #include <sys/types.h>
+#include <atomic>
 
 <%SPL::CodeGen::headerPrologue($model);%>
 
@@ -21,6 +22,9 @@ public:
 
   // Notify pending shutdown
   void prepareToShutdown(); 
+
+  // Processing for source and threaded operators
+  void process(uint32_t idx);
     
   void process(Tuple & tuple, uint32_t port);
     
@@ -30,6 +34,9 @@ public:
   // Punctuation processing
   void process(Punctuation const & punct, uint32_t port);
   
+  void traceStats();
+  void updateMetrics();
+
 private:
   typedef std::tr1::unordered_set<std::string> TLDSet;
 
@@ -39,6 +46,27 @@ private:
   size_t tldsRSel_;
   size_t tldsWSel_;
   bool firstListLoaded_;
+  std::atomic<uint64_t> time_total_added {0};
+  std::atomic<uint64_t> time_submit {0};
+
+#ifdef MEASURE_TIMINGS_EXTRACTDOMAIN
+    std::atomic<uint64_t> count_dumps {0};
+    std::atomic<uint64_t> count_processed {0};
+    std::atomic<uint64_t> count_no_tld_found {0};
+    std::atomic<uint64_t> count_labels {0};
+    std::atomic<uint64_t> count_labels_no_tld_found {0};
+    std::atomic<uint64_t> time_preprep {0};
+    std::atomic<uint64_t> time_lock {0};
+    std::atomic<uint64_t> time_wait_first {0};
+    std::atomic<uint64_t> time_total_kernel_found {0};
+    std::atomic<uint64_t> time_total_kernel_not_found {0};
+    std::atomic<uint64_t> time_set_lookup {0};
+    std::atomic<uint64_t> time_find_label {0};
+    std::atomic<uint64_t> time_unlock {0};
+    std::atomic<uint64_t> time_postprep {0};
+    std::atomic<uint64_t> time_intercall {0};
+    struct timespec ts_lastexit;
+#endif
 }; 
 
 <%SPL::CodeGen::headerEpilogue($model);%>

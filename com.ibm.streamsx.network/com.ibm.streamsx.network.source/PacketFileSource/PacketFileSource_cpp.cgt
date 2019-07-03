@@ -97,6 +97,7 @@ MY_OPERATOR::MY_OPERATOR()
   pcapDescriptor = NULL;
   metricsUpdate = false;
   done = false;
+  packetNotSelectedNow = 0;
 
   // clear the output tuples
   <% for (my $i=0; $i<$model->getNumberOfOutputPorts(); $i++) { %> ;
@@ -313,6 +314,7 @@ void MY_OPERATOR::processPCAPfile(const std::string filename)
     // point at the input tuple with the name used by the code generator, if there is one
     <% if ($inputPort) { print "IPort0Type& iport\$0 = (IPort0Type&)(*inTuple);"; } %> ;
 
+    bool sent_somewhere = false;
     // fill in and submit output tuples to output ports, as selected by output filters, if specified
     <% for (my $i=0; $i<$model->getNumberOfOutputPorts(); $i++) { %> ;
       <% if (scalar($outputFilterList[$i])) { print "if ($outputFilterList[$i])"; } %> 
@@ -321,8 +323,14 @@ void MY_OPERATOR::processPCAPfile(const std::string filename)
         <% CodeGenX::assignOutputAttributeValues("outTuple$i", $model->getOutputPortAt($i)); %> ;
         SPLAPPTRC(L_TRACE, "submitting outTuple<%=$i%>=" << outTuple<%=$i%>, "PacketFileSource");
         submit(outTuple<%=$i%>, <%=$i%>);
+        sent_somewhere = true;
       }
       <% } %> ;
+
+    // If nobody selected this packet, note that, for later analysis.
+    if(!sent_somewhere) {
+        ++packetNotSelectedNow;
+    }
 
     // reset the 'metrics updated' flag, in case one of the output ports references it
     metricsUpdate = false;
@@ -396,6 +404,7 @@ void MY_OPERATOR::metricsThread()
   OperatorMetrics& opm = getContext().getMetrics();
   Metric* totalPacketsProcessed = &opm.getCustomMetricByName("nPacketsProcessedCurrent");
   Metric* totalBytesProcessed = &opm.getCustomMetricByName("nBytesProcessedCurrent");
+  Metric* packetsNotSelected = &opm.getCustomMetricByName("nPacketsNotSelected");
 
   // get metrics periodically and send them to the runtime
   while (!getPE().getShutdownRequested()) {
@@ -423,6 +432,7 @@ void MY_OPERATOR::metricsThread()
     // send the operator's metrics to the runtime
     totalPacketsProcessed->setValue(packetCounterNow);
     totalBytesProcessed->setValue(byteCounterNow);
+    packetsNotSelected->setValue(packetNotSelectedNow);
 
     // updated metrics will be available to the next output tuple emitted
     metricsUpdate = true;

@@ -108,6 +108,7 @@ MY_OPERATOR::MY_OPERATOR() {
   metricsUpdate = false;
   packetDropSW = packetDropSWNow = packetDropSWThen = 0;
   maxQueueDepthSW = maxQueueDepthSWNow = maxQueueDepthSWThen = 0;
+  packetNotSelectedNow = 0;
 #ifdef __ATOMIC_RELAXED
   __atomic_store_n(&realMetricsUpdate, false, __ATOMIC_RELEASE);
 #else
@@ -289,6 +290,7 @@ void MY_OPERATOR::packetProcess(uint8_t *packet, uint32_t length, uint64_t tscTi
   }
 #endif
 
+    bool sent_somewhere = false;
     // Fill in and submit output tuples to output ports, as selected by output filters, if specified.
     <% for (my $i=0; $i<$model->getNumberOfOutputPorts(); $i++) { %> ;
       <% if (scalar($outputFilterList[$i])) { print "if ($outputFilterList[$i])"; } %> 
@@ -296,8 +298,14 @@ void MY_OPERATOR::packetProcess(uint8_t *packet, uint32_t length, uint64_t tscTi
          <% CodeGenX::assignOutputAttributeValues("outTuple$i", $model->getOutputPortAt($i)); %> ;
          //SPLAPPTRC(L_TRACE, "submitting outTuple<%=$i%>=" << outTuple<%=$i%>, "PacketDPDKSource");
          submit(outTuple<%=$i%>, <%=$i%>);
+         sent_somewhere = true;
       }
     <% } %> ;
+
+    // If nobody selected this packet, note that, for later analysis.
+    if(!sent_somewhere) {
+        ++packetNotSelectedNow;
+    }
 
     // reset the "local" version of the 'metrics updated' flag, in case one of the output filters or assignments references it
     // The "real" version of the flag, as updated by the metricsThread() is unaffected, so we don't lose metrics updates under high-packet-rate
@@ -325,6 +333,7 @@ void MY_OPERATOR::metricsThread() {
 
     Metric* totalPacketsDroppedSW = &opm.getCustomMetricByName("nPacketsDroppedSWCurrent");
     Metric* maxQueueDepthSW = &opm.getCustomMetricByName("maxQueueDepthSWCurrent");
+    Metric* packetsNotSelected = &opm.getCustomMetricByName("nPacketsNotSelected");
 
     // get statistics periodically and send them to the runtime
     while (!getPE().getShutdownRequested()) {
@@ -367,6 +376,7 @@ void MY_OPERATOR::metricsThread() {
       totalBytesProcessed->setValue(byteCounter);
       totalPacketsDroppedSW->setValue(packetDropSWNow);
       maxQueueDepthSW->setValue(maxQueueDepthSWNow);
+      packetsNotSelected->setValue(packetNotSelectedNow);
 
       // updated metrics will be available to the next output tuple emitted
 #ifdef __ATOMIC_RELAXED
